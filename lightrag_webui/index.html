@@ -112,6 +112,92 @@
       </div>
       <div class="log" id="queryLog" style="margin-top:12px"></div>
     </div>
+
+    <!-- Dashboard -->
+    <div class="card" id="dashCard">
+      <h2 style="margin:0 0 10px 0; font-size:16px;">Dashboard</h2>
+      <div class="grid" id="kpis">
+        <div class="card" style="background:#0a0f28;">
+          <div class="muted">Docs</div><div id="kpiDocs" style="font-size:24px;font-weight:700">-</div>
+        </div>
+        <div class="card" style="background:#0a0f28;">
+          <div class="muted">Chunks</div><div id="kpiChunks" style="font-size:24px;font-weight:700">-</div>
+        </div>
+        <div class="card" style="background:#0a0f28;">
+          <div class="muted">Graph Nodes</div><div id="kpiNodes" style="font-size:24px;font-weight:700">-</div>
+        </div>
+        <div class="card" style="background:#0a0f28;">
+          <div class="muted">Graph Edges</div><div id="kpiEdges" style="font-size:24px;font-weight:700">-</div>
+        </div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <canvas id="ingestSpark" height="60"></canvas>
+      </div>
+      <div class="tagbox" id="topTags" style="margin-top:8px"></div>
+    </div>
+
+    <!-- Filters -->
+    <div class="card">
+      <h2 style="margin:0 0 10px 0; font-size:16px;">Filters</h2>
+      <div class="grid">
+        <div>
+          <label>Title contains</label>
+          <input id="fQ" type="text" placeholder="factsheet, handbook..." />
+        </div>
+        <div>
+          <label>Tags (comma separated)</label>
+          <input id="fTags" type="text" placeholder="admissions, scholarship" />
+        </div>
+        <div>
+          <label>MIME</label>
+          <input id="fMime" type="text" placeholder="application/pdf, text/plain" />
+        </div>
+        <div>
+          <label>Date from</label>
+          <input id="fFrom" type="date" />
+        </div>
+        <div>
+          <label>Date to</label>
+          <input id="fTo" type="date" />
+        </div>
+        <div>
+          <label>Tag mode</label>
+          <select id="fTagMode">
+            <option value="AND">AND (all tags)</option>
+            <option value="OR">OR (any tag)</option>
+          </select>
+        </div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn" id="applyFiltersBtn">Apply</button>
+        <button class="btn secondary" id="clearFiltersBtn">Clear</button>
+        <span class="muted">Updates the document list & “Test query”.</span>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="card">
+      <h2 style="margin:0 0 10px 0; font-size:16px;">Actions</h2>
+      <div class="row">
+        <button class="btn" id="btnReindex">Reindex</button>
+        <button class="btn" id="btnVacuum">Vacuum (dry run)</button>
+        <button class="btn" id="btnExport">Export</button>
+        <input id="delDocId" type="text" class="col" placeholder="doc_id to delete…" />
+        <button class="btn" id="btnDeleteDoc">Delete Doc</button>
+        <button class="btn right" id="btnTestQuery">Test Query (with filters)</button>
+      </div>
+      <div class="log" id="actionsLog" style="margin-top:12px"></div>
+    </div>
+
+    <!-- Documents -->
+    <div class="card">
+      <h2 style="margin:0 0 10px 0; font-size:16px;">Documents</h2>
+      <div class="row muted" style="margin-bottom:8px">
+        <span id="docsSummary">—</span>
+      </div>
+      <div id="docsTable" class="log" style="background:#0a0f28"></div>
+    </div>
+
   </div>
 
   <script>
@@ -275,6 +361,155 @@
       } catch(e) {
         log(queryLog, "Network/Server error: " + e.message);
       }
+    };
+
+    // ============ Dashboard/Filters/Actions ============
+    
+    const fQ = $("fQ"), fTags = $("fTags"), fMime = $("fMime"), fFrom = $("fFrom"), fTo = $("fTo"), fTagMode = $("fTagMode");
+    const applyFiltersBtn = $("applyFiltersBtn"), clearFiltersBtn = $("clearFiltersBtn");
+    const btnReindex = $("btnReindex"), btnVacuum = $("btnVacuum"), btnExport = $("btnExport"), btnDeleteDoc = $("btnDeleteDoc"), btnTestQuery = $("btnTestQuery");
+    const delDocId = $("delDocId"), actionsLog = $("actionsLog");
+    const docsTable = $("docsTable"), docsSummary = $("docsSummary");
+
+    const kpiDocs = $("kpiDocs"), kpiChunks = $("kpiChunks"), kpiNodes = $("kpiNodes"), kpiEdges = $("kpiEdges"), topTags = $("topTags");
+
+    async function fetchStats(ns) {
+      const url = new URL(api("/stats"), window.location.origin);
+      url.searchParams.set("namespace", ns);
+      const res = await fetch(url, { method: "GET" });
+      if (!res.ok) throw new Error(`stats ${res.status}`);
+      return res.json();
+    }
+
+    async function fetchDocs(ns, params = {}) {
+      const url = new URL(api("/docs"), window.location.origin);
+      url.searchParams.set("namespace", ns);
+      Object.entries(params).forEach(([k,v]) => v && url.searchParams.set(k, v));
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`docs ${res.status}`);
+      return res.json();
+    }
+
+    function renderKpis(s) {
+      kpiDocs.textContent = s.docs ?? "-";
+      kpiChunks.textContent = s.chunks ?? "-";
+      kpiNodes.textContent = s.graph_nodes ?? "-";
+      kpiEdges.textContent = s.graph_edges ?? "-";
+      // tags
+      topTags.innerHTML = "";
+      (s.top_tags || []).slice(0, 12).forEach(([tag, n]) => {
+        const b = document.createElement("button");
+        b.textContent = `${tag} (${n})`;
+        b.onclick = () => { fTags.value = fTags.value ? `${fTags.value},${tag}` : tag; applyFiltersBtn.click(); };
+        topTags.appendChild(b);
+      });
+      // sparkline
+      drawSparkline("ingestSpark", s.ingests_by_day || []);
+    }
+
+    // super light sparkline
+    function drawSparkline(id, series) {
+      const c = document.getElementById(id);
+      if (!c || !series.length) { const ctx = c?.getContext?.("2d"); if (ctx) { ctx.clearRect(0,0,c.width,c.height);} return; }
+      const ctx = c.getContext("2d");
+      const w = c.width = c.clientWidth || 600, h = c.height;
+      const values = series.map(x => x[1]);
+      const max = Math.max(...values, 1), min = Math.min(...values, 0);
+      ctx.clearRect(0,0,w,h);
+      ctx.beginPath();
+      series.forEach(([,v], i) => {
+        const x = (i/(series.length-1)) * (w-10) + 5;
+        const y = h - ((v - min) / (max - min || 1)) * (h-10) - 5;
+        i ? ctx.lineTo(x,y) : ctx.moveTo(x,y);
+      });
+      ctx.strokeStyle = "#a8b3ff"; ctx.lineWidth = 2; ctx.stroke();
+    }
+
+    function currentFilterParams() {
+      return {
+        q: fQ.value.trim(),
+        tags: fTags.value.trim(),    // csv
+        mime: fMime.value.trim(),
+        from: fFrom.value,
+        to: fTo.value,
+        tag_mode: fTagMode.value
+      };
+    }
+
+    function renderDocsTable(resp) {
+      const items = resp.items || [];
+      docsSummary.textContent = `${items.length} of ${resp.total || items.length} documents`;
+      const lines = items.map(it => {
+        const t = (it.tags || []).join(", ");
+        return `• ${it.doc_id} | ${it.title || "-"} | ${it.mime || "-"} | ${it.ingest_date || "-"} | [${t}]`;
+      });
+      docsTable.textContent = lines.join("\n") || "No documents match filters.";
+    }
+
+    async function refreshAllForNamespace(ns) {
+      try {
+        const stats = await fetchStats(ns);
+        renderKpis(stats);
+      } catch(e) { /* optional: show error */ }
+
+      try {
+        const docs = await fetchDocs(ns, currentFilterParams());
+        renderDocsTable(docs);
+      } catch(e) {
+        docsTable.textContent = "Failed to fetch docs: " + e.message;
+      }
+    }
+
+    // Wire collection change
+    collectionSelect.addEventListener("change", () => {
+      refreshAllForNamespace(collectionSelect.value);
+    });
+    // Initial load
+    refreshAllForNamespace(collectionSelect.value);
+
+    // Filters
+    applyFiltersBtn.onclick = () => refreshAllForNamespace(collectionSelect.value);
+    clearFiltersBtn.onclick = () => { fQ.value = fTags.value = fMime.value = fFrom.value = fTo.value = ""; fTagMode.value="AND"; refreshAllForNamespace(collectionSelect.value); };
+
+    // Actions
+    btnReindex.onclick = async () => {
+      const out = await postJSON(api("/admin/reindex"), { namespace: collectionSelect.value });
+      log(actionsLog, out);
+    };
+    btnVacuum.onclick = async () => {
+      const out = await postJSON(api("/admin/vacuum"), { namespace: collectionSelect.value, dry_run: true });
+      log(actionsLog, out);
+    };
+    btnExport.onclick = async () => {
+      const out = await postJSON(api("/admin/export"), { namespace: collectionSelect.value });
+      log(actionsLog, out);
+      if (out?.json?.url) window.open(out.json.url, "_blank");
+    };
+    btnDeleteDoc.onclick = async () => {
+      const id = delDocId.value.trim();
+      if (!id) return log(actionsLog, "Enter a doc_id first.");
+      const url = api(`/docs/${encodeURIComponent(id)}?namespace=${encodeURIComponent(collectionSelect.value)}`);
+      const res = await fetch(url, { method: "DELETE" });
+      const text = await res.text(); let json; try { json = JSON.parse(text); } catch { json = { raw: text }; }
+      log(actionsLog, { ok: res.ok, status: res.status, json });
+      refreshAllForNamespace(collectionSelect.value);
+    };
+    btnTestQuery.onclick = async () => {
+      // Uses current filters to build a short “focused” query
+      const ns = collectionSelect.value;
+      const filterObj = {};
+      const tagsCsv = fTags.value.trim();
+      if (tagsCsv) filterObj.tags = tagsCsv.split(",").map(s => s.trim()).filter(Boolean);
+      if (fMime.value) filterObj.mime = fMime.value;
+      if (fFrom.value || fTo.value) filterObj.date = { from: fFrom.value || undefined, to: fTo.value || undefined };
+      const body = {
+        namespace: ns,
+        query: (fQ.value || "Summarize key points from filtered documents.").trim(),
+        filters: filterObj,
+        retrieval: { hybrid: true, top_k: 12, mmr_lambda: 0.4 }
+      };
+      const out = await postJSON(api("/query"), body);
+      log(actionsLog, out);
     };
   </script>
   <!-- Optional: set LIGHTRAG_API_BASE at runtime -->
