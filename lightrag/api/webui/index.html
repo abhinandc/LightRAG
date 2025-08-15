@@ -1,27 +1,286 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
-    <meta http-equiv="Pragma" content="no-cache" />
-    <meta http-equiv="Expires" content="0" />
-    <link rel="icon" type="image/png" href="favicon.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Lightrag</title>
-    <script type="module" crossorigin src="/webui/assets/index-MT1PAKNY.js"></script>
-    <link rel="modulepreload" crossorigin href="/webui/assets/react-vendor-DEwriMA6.js">
-    <link rel="modulepreload" crossorigin href="/webui/assets/ui-vendor-CeCm8EER.js">
-    <link rel="modulepreload" crossorigin href="/webui/assets/graph-vendor-B-X5JegA.js">
-    <link rel="modulepreload" crossorigin href="/webui/assets/utils-vendor-BysuhMZA.js">
-    <link rel="modulepreload" crossorigin href="/webui/assets/feature-graph-BgVuQYut.js">
-    <link rel="modulepreload" crossorigin href="/webui/assets/feature-documents-DfpqEFJm.js">
-    <link rel="modulepreload" crossorigin href="/webui/assets/mermaid-vendor-J2ju872p.js">
-    <link rel="modulepreload" crossorigin href="/webui/assets/markdown-vendor-DmIvJdn7.js">
-    <link rel="modulepreload" crossorigin href="/webui/assets/feature-retrieval-Q3pnpDUM.js">
-    <link rel="stylesheet" crossorigin href="/webui/assets/feature-graph-BipNuM18.css">
-    <link rel="stylesheet" crossorigin href="/webui/assets/index-CafJWW1u.css">
-  </head>
-  <body>
-    <div id="root"></div>
-  </body>
+<head>
+  <meta charset="utf-8" />
+  <title>LightRAG – Collections UI</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root { --radius:16px; --pad:14px; --gap:12px; --font: system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif; }
+    * { box-sizing: border-box; }
+    body { font-family: var(--font); margin: 0; background: #0b1020; color: #eef2ff; }
+    header { padding: 22px; display:flex; align-items:center; gap:16px; border-bottom: 1px solid #243054; background:#0f1530; position: sticky; top:0; z-index:10; }
+    h1 { font-size: 18px; margin: 0; font-weight: 650; letter-spacing: .2px; }
+    .container { max-width: 1100px; margin: 24px auto; padding: 0 16px; }
+    .card { background: #111737; border: 1px solid #243054; border-radius: var(--radius); padding: 16px; margin-bottom: 16px; }
+    .row { display: flex; flex-wrap: wrap; gap: var(--gap); align-items: center; }
+    label { font-size: 13px; opacity:.9; }
+    input[type="text"], input[type="url"], textarea, select {
+      width: 100%; padding: var(--pad); border-radius: 12px; border: 1px solid #2b3560; background: #0d1330; color: #eef2ff;
+    }
+    textarea { min-height: 120px; resize: vertical; }
+    .col { flex: 1 1 280px; }
+    .btn {
+      appearance: none; border: 1px solid #2b3560; background: #1a2150; color: #e6ecff;
+      padding: 12px 14px; border-radius: 12px; cursor: pointer; font-weight: 600;
+    }
+    .btn:hover { background:#202a68; }
+    .btn.secondary { background: transparent; }
+    .muted { opacity: .8; font-size: 12px; }
+    .pill { background:#19234f; padding:6px 10px; border-radius:999px; border:1px solid #2b3560; }
+    .grid { display:grid; gap:12px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+    .log { white-space: pre-wrap; background:#0a0f28; padding:14px; border-radius:12px; border:1px solid #243054; max-height: 320px; overflow:auto;}
+    .tagbox { display:flex; gap:8px; flex-wrap:wrap; }
+    .tagbox button { border:none; background:#1a2150; color:#a8b3ff; padding:6px 10px; border-radius:999px; cursor:pointer; }
+    .tagbox button.active { background:#2a3aa0; color:#fff; }
+    .right { margin-left:auto }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>LightRAG</h1>
+    <span class="pill">Collections Enabled</span>
+    <div class="right muted" id="baseInfo"></div>
+  </header>
+
+  <div class="container">
+    <!-- Collection Picker -->
+    <div class="card">
+      <div class="row">
+        <div class="col">
+          <label>Collection / Namespace</label>
+          <select id="collectionSelect"></select>
+        </div>
+        <div class="col">
+          <label>Add or rename collection</label>
+          <input id="collectionInput" type="text" placeholder="e.g., admissions, sales, finance" />
+        </div>
+        <div class="col" style="flex:0 0 auto; display:flex; gap:8px; align-items:flex-end;">
+          <button class="btn" id="addCollectionBtn">Add/Use</button>
+          <button class="btn secondary" id="removeCollectionBtn">Remove</button>
+        </div>
+      </div>
+      <div class="muted" style="margin-top:8px">
+        Tip: your last 8 collections are stored locally so you can switch fast.
+      </div>
+      <div class="tagbox" id="quickCollections" style="margin-top:10px"></div>
+    </div>
+
+    <!-- Ingest -->
+    <div class="card">
+      <h2 style="margin:0 0 10px 0; font-size:16px;">Ingest</h2>
+      <div class="grid">
+        <div>
+          <label>Source URL (optional)</label>
+          <input id="sourceUrl" type="url" placeholder="https://example.com/file.pdf or s3://bucket/key" />
+        </div>
+        <div>
+          <label>Local path (server-visible) or upload (choose one)</label>
+          <input id="sourcePath" type="text" placeholder="/mnt/data/raw/admissions/2025-08-14/file.pdf" />
+        </div>
+        <div>
+          <label>Metadata JSON (optional)</label>
+          <textarea id="metadataJson" placeholder='{"doc_id":"my_doc_v1","tags":["factsheet"]}'></textarea>
+        </div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn" id="ingestBtn">POST /ingest</button>
+        <span class="muted">Sends { namespace: &lt;collection&gt;, source_path/source_url, metadata }</span>
+      </div>
+      <div class="log" id="ingestLog" style="margin-top:12px"></div>
+    </div>
+
+    <!-- Query -->
+    <div class="card">
+      <h2 style="margin:0 0 10px 0; font-size:16px;">Query</h2>
+      <div class="grid">
+        <div>
+          <label>Your question</label>
+          <textarea id="queryText" placeholder="Summarize key admissions deadlines and scholarship criteria."></textarea>
+        </div>
+        <div>
+          <label>Filters (optional JSON)</label>
+          <textarea id="filtersJson" placeholder='{"tags":["admissions","factsheet"]}'></textarea>
+        </div>
+        <div>
+          <label>Retrieval options (optional JSON)</label>
+          <textarea id="retrievalJson" placeholder='{"hybrid":true,"top_k":12,"mmr_lambda":0.4}'></textarea>
+        </div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn" id="queryBtn">POST /query</button>
+        <span class="muted">Sends { namespace: &lt;collection&gt;, query, filters, retrieval }</span>
+      </div>
+      <div class="log" id="queryLog" style="margin-top:12px"></div>
+    </div>
+  </div>
+
+  <script>
+    // ==== Config ====
+    const API_BASE = window.LIGHTRAG_API_BASE || (document.currentScript.getAttribute('data-api') || '').trim() || '';
+    const DEFAULT_COLLECTIONS = ["admissions", "sales", "finance"];
+    const LS_KEY = "lightrag.collections.recent";
+    const MAX_RECENTS = 8;
+
+    // ==== DOM ====
+    const $ = (id) => document.getElementById(id);
+    const collectionSelect = $("collectionSelect");
+    const collectionInput = $("collectionInput");
+    const addCollectionBtn = $("addCollectionBtn");
+    const removeCollectionBtn = $("removeCollectionBtn");
+    const quickCollections = $("quickCollections");
+
+    const ingestBtn = $("ingestBtn");
+    const ingestLog = $("ingestLog");
+    const sourceUrl = $("sourceUrl");
+    const sourcePath = $("sourcePath");
+    const metadataJson = $("metadataJson");
+
+    const queryBtn = $("queryBtn");
+    const queryLog = $("queryLog");
+    const queryText = $("queryText");
+    const filtersJson = $("filtersJson");
+    const retrievalJson = $("retrievalJson");
+    $("baseInfo").textContent = "API " + (API_BASE || "(same origin)");
+
+    // ==== Collections state ====
+    function loadCollections() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(LS_KEY) || "[]");
+        if (Array.isArray(saved) && saved.length) return saved.slice(0, MAX_RECENTS);
+      } catch(e) {}
+      return DEFAULT_COLLECTIONS.slice();
+    }
+    function saveCollections(list) {
+      const uniq = Array.from(new Set(list.filter(Boolean).map(s => s.trim()).filter(s => s.length)));
+      localStorage.setItem(LS_KEY, JSON.stringify(uniq.slice(0, MAX_RECENTS)));
+      return uniq;
+    }
+    function setActiveCollection(name) {
+      if (!name) return;
+      const list = saveCollections([name, ...loadCollections()]);
+      renderCollections(list, name);
+    }
+    function renderCollections(list, active) {
+      collectionSelect.innerHTML = "";
+      list.forEach(name => {
+        const opt = document.createElement("option");
+        opt.value = name; opt.textContent = name;
+        if (name === active) opt.selected = true;
+        collectionSelect.appendChild(opt);
+      });
+      // quick tags
+      quickCollections.innerHTML = "";
+      list.forEach(name => {
+        const btn = document.createElement("button");
+        btn.textContent = name;
+        if (name === active) btn.classList.add("active");
+        btn.onclick = () => setActiveCollection(name);
+        quickCollections.appendChild(btn);
+      });
+    }
+
+    // ==== Init ====
+    const initial = loadCollections();
+    renderCollections(initial, initial[0]);
+
+    addCollectionBtn.onclick = () => {
+      const name = (collectionInput.value || "").trim();
+      const val = name || collectionSelect.value;
+      if (!val) return;
+      setActiveCollection(val);
+      collectionInput.value = "";
+    };
+
+    removeCollectionBtn.onclick = () => {
+      const current = collectionSelect.value;
+      const list = loadCollections().filter(n => n !== current);
+      const final = saveCollections(list);
+      const fallback = final[0] || "";
+      renderCollections(final, fallback);
+    };
+
+    // ==== Helpers ====
+    function api(path) { return (API_BASE || "") + path; }
+    async function postJSON(url, body) {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify(body),
+      });
+      const text = await res.text();
+      let json;
+      try { json = JSON.parse(text); } catch(e) { json = { raw:text }; }
+      return { ok: res.ok, status: res.status, json };
+    }
+    function parseOptionalJSON(str) {
+      const s = (str || "").trim();
+      if (!s) return undefined;
+      try { return JSON.parse(s); } catch(e) { throw new Error("Invalid JSON: " + e.message); }
+    }
+    function log(el, data) {
+      const ts = new Date().toISOString();
+      el.textContent = `[${ts}]\n` + (typeof data === "string" ? data : JSON.stringify(data, null, 2));
+    }
+
+    // ==== Actions ====
+    ingestBtn.onclick = async () => {
+      const ns = collectionSelect.value;
+      const body = { namespace: ns };
+      const srcUrl = (sourceUrl.value || "").trim();
+      const srcPath = (sourcePath.value || "").trim();
+
+      if (srcUrl) body.source_url = srcUrl;
+      if (srcPath) body.source_path = srcPath;
+
+      try {
+        const meta = parseOptionalJSON(metadataJson.value);
+        if (meta) body.metadata = meta;
+      } catch(e) {
+        log(ingestLog, "Metadata error: " + e.message);
+        return;
+      }
+
+      log(ingestLog, {request: body});
+      try {
+        const out = await postJSON(api("/ingest"), body);
+        log(ingestLog, out);
+      } catch(e) {
+        log(ingestLog, "Network/Server error: " + e.message);
+      }
+    };
+
+    queryBtn.onclick = async () => {
+      const ns = collectionSelect.value;
+      const body = { namespace: ns, query: queryText.value || "" };
+
+      try {
+        const filters = parseOptionalJSON(filtersJson.value);
+        if (filters) body.filters = filters;
+      } catch(e) {
+        log(queryLog, "Filters error: " + e.message);
+        return;
+      }
+      try {
+        const retr = parseOptionalJSON(retrievalJson.value);
+        if (retr) body.retrieval = retr;
+      } catch(e) {
+        log(queryLog, "Retrieval error: " + e.message);
+        return;
+      }
+
+      log(queryLog, {request: body});
+      try {
+        const out = await postJSON(api("/query"), body);
+        log(queryLog, out);
+      } catch(e) {
+        log(queryLog, "Network/Server error: " + e.message);
+      }
+    };
+  </script>
+  <!-- Optional: set LIGHTRAG_API_BASE at runtime -->
+  <script>
+    // If you deploy this behind a different domain than the API, set window.LIGHTRAG_API_BASE here.
+    // Example: window.LIGHTRAG_API_BASE = "https://your-lightrag.onrender.com";
+  </script>
+</body>
 </html>
